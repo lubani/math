@@ -1,82 +1,102 @@
-from sympy import symbols, Poly, solve, Eq, collect, expand
+from sympy import symbols, solve, Eq, expand, simplify, collect, factor
 
-def find_roots_of_characteristic(coefs, b, d):
-    """
-    Find the roots of the characteristic equation for the given coefficients of the homogeneous recurrence relation
-    and the base and degree of the polynomial for the non-homogeneous part.
 
-    :param coefs: Coefficients of the homogeneous part (e.g., [1, -2] for t_n - 2t_{n-1})
-    :param b: Base of the exponential non-homogeneous part.
-    :param d: Degree of the polynomial in the non-homogeneous part.
-    :return: Roots of the characteristic equation.
-    """
-    # Define the symbol for the characteristic polynomial variable
+def find_homogeneous_solution(coefficients, n):
     x = symbols('x')
+    # Construct the full characteristic polynomial (including all coefficients)
+    char_poly = sum(coef * x ** i for i, coef in enumerate(reversed(coefficients)))
+    roots = solve(char_poly, x)
+    multiplicities = {root: roots.count(root) for root in set(roots)}
 
-    # Generate the characteristic polynomial for the homogeneous part
-    char_poly_homogeneous = sum(c * x ** i for i, c in enumerate(reversed(coefs)))
-    char_poly_homogeneous = Poly(char_poly_homogeneous, x)
+    # Create C0, C1, ... depending on the number of roots
+    C = symbols(f'C0:{len(roots)}')
+    homogeneous_solution = sum(
+        C[i] * (root ** n if multiplicities[root] == 1 else n ** k * root ** n)
+        for i, root in enumerate(set(roots))
+        for k in range(multiplicities[root])
+    )
 
-    # Generate the characteristic polynomial for the non-homogeneous part
-    char_poly_non_homogeneous = Poly((x - b)**(d + 1), x)
+    print(f"[DEBUG] Characteristic polynomial: {char_poly}")
+    print(f"[DEBUG] Roots of characteristic equation: {roots}")
+    print(f"[DEBUG] Homogeneous solution: {homogeneous_solution}")
+    return simplify(homogeneous_solution)
 
-    # Solve the characteristic polynomial equation for both parts
-    roots_homogeneous = solve(char_poly_homogeneous, x)
-    roots_non_homogeneous = solve(char_poly_non_homogeneous, x)
 
-    return roots_homogeneous, roots_non_homogeneous
+def find_particular_solution(b, d, coefficients, n, homogeneous_roots):
+    # Define A coefficients for the particular solution
+    A = symbols(f'A0:{d + 1}')
+    # Check how many times the non-homogeneous base overlaps with homogeneous roots
+    overlap_multiplier = homogeneous_roots.count(b)
 
-# Define the symbols
-n = symbols('n', integer=True)
-C = symbols('C0:5')  # Make sure to have enough coefficients
+    # Assumed particular solution form with overlap taken into account
+    particular_form = n ** overlap_multiplier * sum(A[i] * n ** i for i in range(d + 1)) * b ** n
+    lhs = sum(coef * particular_form.subs(n, n - i) for i, coef in enumerate(coefficients))
+    rhs = expand((n + 5) * b ** n)  # Non-homogeneous part
 
-# Coefficients for the homogeneous part of the recurrence relation t_n - 2t_{n-1}
-coefficients = [1, -2]
-# Base and degree for the non-homogeneous part (n + 5) * 3^n
-b = 3
-d = 1
+    # Debug print for particular solution setup
+    print(f"\n[DEBUG] Assumed particular form: {particular_form}")
+    print(f"[DEBUG] Non-homogeneous RHS: {rhs}")
+    print(f"[DEBUG] Expanded LHS before collection: {lhs}")
 
-# Find roots of the characteristic equation for these coefficients
-roots_homogeneous, roots_non_homogeneous = find_roots_of_characteristic(coefficients, b, d)
+    # Expand the lhs and collect terms involving different powers of n
+    lhs_expanded = expand(lhs)
+    lhs_collected = collect(lhs_expanded, n, evaluate=False)  # Collect terms without simplifying further
 
-# Combine the roots, accounting for multiplicity
-combined_roots = roots_homogeneous + roots_non_homogeneous * (d + 1)
+    print(f"[DEBUG] Expanded LHS after collection: {lhs_collected}")
 
-# Construct the general solution
-general_solution = 0
-root_multiplicities = {root: combined_roots.count(root) for root in set(combined_roots)}
+    equations = []
 
-for i, root in enumerate(sorted(set(combined_roots))):
-    for j in range(root_multiplicities[root]):
-        if j == 0:
-            general_solution += C[i] * root**n
-        else:
-            general_solution += C[i + j] * n**j * root**n
+    # Extract coefficients for each power of n and set up the equations
+    for power in range(d + 1):
+        coeff_lhs = lhs_collected.get(n ** power, 0)
+        coeff_rhs = rhs.coeff(n, power)
+        print(f"[DEBUG] Coefficient of n^{power} in LHS: {coeff_lhs}")
+        print(f"[DEBUG] Coefficient of n^{power} in RHS: {coeff_rhs}")
+        if any(A[i] in coeff_lhs.free_symbols for i in range(d + 1)):
+            equations.append(Eq(coeff_lhs, coeff_rhs))
 
-# Non-homogeneous part of the equation (n + 5) * 3^n
-non_homog_part = (n + 5) * b**n
+    # Solve the equations
+    print(f"\n[DEBUG] Equations to solve for particular solution: {equations}")
+    particular_solution_coeffs = solve(equations, A)
 
-# Substitute the general solution into the recurrence relation
-# t_n - sum(a_i * t_{n-i}) - non_homog_part = 0
-tn = general_solution
-for i, coef in enumerate(coefficients):
-    tn -= coef * general_solution.subs(n, n-i)
+    print(f"[DEBUG] Particular solution coefficients: {particular_solution_coeffs}")
 
-tn -= non_homog_part
+    # Construct the particular solution using the solved coefficients
+    if particular_solution_coeffs:
+        particular_solution = sum(particular_solution_coeffs.get(A[i], 0) * n ** i for i in range(d + 1)) * b ** n
+        particular_solution = n ** overlap_multiplier * particular_solution
+    else:
+        particular_solution = 0
 
-# Expand and simplify the equation
-simplified_eq = expand(tn)
+    print(f"[DEBUG] Particular solution: {particular_solution}\n")
 
-# Collect terms with respect to C to equate coefficients
-equations = []
-C_terms = collect(simplified_eq, C, evaluate=False)
-for i in range(len(C)):
-    # We use Eq to create an equation, assuming that the coefficient of each C[i] must be 0
-    equations.append(Eq(C_terms.get(C[i], 0), 0))
+    return simplify(particular_solution)
 
-# Solve the system of equations for the constants C[i]
-constants_solutions = solve(equations, C)
 
-# Print the general solution and the constants
-print(f"General solution: {general_solution}")
-print(f"Constants: {constants_solutions}")
+def solve_recurrence(coefficients, b, d, n):
+    homogeneous_solution = find_homogeneous_solution(coefficients, n)
+    homogeneous_roots = solve(sum(coef * symbols('x') ** i for i, coef in enumerate(reversed(coefficients))))
+
+    particular_solution = find_particular_solution(b, d, coefficients, n, homogeneous_roots)
+    general_solution = homogeneous_solution + particular_solution
+
+    # Final simplification to make the general solution more readable
+    general_solution = expand(general_solution)
+    general_solution = factor(general_solution)
+
+    return simplify(general_solution)
+
+
+def main():
+    n = symbols('n', integer=True)
+    # Coefficients for the recurrence relation t_n - 2t_{n-1}
+    coefficients = [1, -2]  # Example coefficients for the homogeneous part
+    b = 3  # Base of the non-homogeneous part
+    d = 1  # Degree of the polynomial in the non-homogeneous part
+
+    solution = solve_recurrence(coefficients, b, d, n)
+    print(f"General solution: {solution}")
+
+
+if __name__ == "__main__":
+    main()

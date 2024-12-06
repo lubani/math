@@ -2,13 +2,15 @@ import random
 import networkx as nx
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
+from collections import deque
+import math
 
 
 def bfs(G, s, t, parent):
     visited = {s}
-    queue = [s]
+    queue = deque([s])  # Using deque for efficient pop from the left
     while queue:
-        u = queue.pop(0)
+        u = queue.popleft()
         for v in G[u]:
             if v not in visited and G[u][v]['capacity'] - G[u][v]['flow'] > 0:
                 queue.append(v)
@@ -25,7 +27,7 @@ def ford_fulkerson(G, s, t):
     steps = []  # To record the flow at each step
 
     while bfs(G, s, t, parent):
-        path_flow = float('Inf')
+        path_flow = math.inf  # Use math.inf instead of float('Inf')
         v = t
 
         # Find the maximum flow through the path found by BFS
@@ -73,26 +75,28 @@ def create_random_network(nodes, edges, source, sink):
         if u != v and not G.has_edge(u, v) and not (u == sink or v == source):
             capacity = random.randint(5, 20)
             G.add_edge(u, v, capacity=capacity, flow=0)
-            G.add_edge(v, u, capacity=0, flow=0)  # Adding the reverse edge with 0 capacity
+            G.add_edge(v, u, capacity=0, flow=0)  # Adding the reverse edge upfront
 
     # Ensure source has at least two outgoing edges with significant capacities
     outgoing_from_source = list(G.successors(source)) if source in G else []
     while len(outgoing_from_source) < 2:
-        v = random.choice([node for node in range(nodes) if node != source and node != sink and node not in outgoing_from_source])
+        v = random.choice(
+            [node for node in range(nodes) if node != source and node != sink and node not in outgoing_from_source])
         capacity = random.randint(10, 20)
         if not G.has_edge(source, v):
             G.add_edge(source, v, capacity=capacity, flow=0)
-            G.add_edge(v, source, capacity=0, flow=0)
+            G.add_edge(v, source, capacity=0, flow=0)  # Reverse edge with zero capacity
             outgoing_from_source.append(v)
 
     # Ensure sink has at least two incoming edges with significant capacities
     incoming_to_sink = list(G.predecessors(sink)) if sink in G else []
     while len(incoming_to_sink) < 2:
-        u = random.choice([node for node in range(nodes) if node != source and node != sink and node not in incoming_to_sink])
+        u = random.choice(
+            [node for node in range(nodes) if node != source and node != sink and node not in incoming_to_sink])
         capacity = random.randint(10, 20)
         if not G.has_edge(u, sink):
             G.add_edge(u, sink, capacity=capacity, flow=0)
-            G.add_edge(sink, u, capacity=0, flow=0)
+            G.add_edge(sink, u, capacity=0, flow=0)  # Reverse edge with zero capacity
             incoming_to_sink.append(u)
 
     # Ensure intermediate nodes have multiple connections
@@ -100,33 +104,37 @@ def create_random_network(nodes, edges, source, sink):
         if node not in (source, sink):
             connections = list(G.successors(node)) if node in G else []
             while len(connections) < 2:
-                v = random.choice([n for n in range(nodes) if n != node and n != source and n != sink and n not in connections])
+                v = random.choice(
+                    [n for n in range(nodes) if n != node and n != source and n != sink and n not in connections])
                 capacity = random.randint(5, 20)
                 if not G.has_edge(node, v):
                     G.add_edge(node, v, capacity=capacity, flow=0)
-                    G.add_edge(v, node, capacity=0, flow=0)
+                    G.add_edge(v, node, capacity=0, flow=0)  # Reverse edge with zero capacity
                     connections.append(v)
 
     return G
+
 
 def create_random_network_with_constraints(nodes, edges, source, sink):
     G = nx.DiGraph()
 
     # Create direct connections from source to intermediate nodes, and from intermediate nodes to sink
     for i in range(1, nodes - 1):
-        G.add_edge(source, i, capacity=random.randint(10, 20), flow=0)
-        G.add_edge(i, sink, capacity=random.randint(10, 20), flow=0)
+        capacity = random.randint(10, 20)
+        G.add_edge(source, i, capacity=capacity, flow=0)
+        G.add_edge(i, source, capacity=0, flow=0)  # Adding the reverse edge with zero capacity
+
+        capacity = random.randint(10, 20)
+        G.add_edge(i, sink, capacity=capacity, flow=0)
+        G.add_edge(sink, i, capacity=0, flow=0)  # Adding the reverse edge with zero capacity
 
     # Add additional intermediate connections
     for i in range(1, nodes - 1):
         for j in range(1, nodes - 1):
             if i != j and not G.has_edge(i, j):
-                G.add_edge(i, j, capacity=random.randint(5, 15), flow=0)
-
-    # Add reverse edges for all existing edges with 0 initial flow
-    for u, v in list(G.edges()):
-        if not G.has_edge(v, u):
-            G.add_edge(v, u, capacity=0, flow=0)
+                capacity = random.randint(5, 15)
+                G.add_edge(i, j, capacity=capacity, flow=0)
+                G.add_edge(j, i, capacity=0, flow=0)  # Adding the reverse edge with zero capacity
 
     # Add extra random edges until reaching the desired edge count
     while len(G.edges()) < edges:
@@ -134,8 +142,7 @@ def create_random_network_with_constraints(nodes, edges, source, sink):
         v = random.choice(range(nodes))
         if u != v and not G.has_edge(u, v) and not (u == sink or v == source):
             G.add_edge(u, v, capacity=random.randint(5, 15), flow=0)
-            if not G.has_edge(v, u):
-                G.add_edge(v, u, capacity=0, flow=0)  # Reverse edge
+            G.add_edge(v, u, capacity=0, flow=0)  # Adding the reverse edge with zero capacity
 
     return G
 
@@ -204,6 +211,7 @@ def main():
     ani = FuncAnimation(fig, update, frames=len(steps), fargs=(G, pos, ax, steps), repeat=False)
     ani.save('ford_fulkerson_animation.gif', writer='pillow')
     plt.show()
+
 
 if __name__ == "__main__":
     main()
